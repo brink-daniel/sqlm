@@ -16,6 +16,7 @@ global current_tab, height, width, middle, quarter, init_complete
 #data
 global data_cpu, data_mem, data_info, data_activity, data_jobs, data_waits, data_changes
 global data_cpu_changed, data_mem_changed, data_info_changed, data_activity_changed, data_jobs_changed, data_waits_changed, data_changes_changed
+global db_connection
 
 
 #main entry point
@@ -36,7 +37,13 @@ def cli(instance:str, user:str, password:str):
 
 
 def test_connection(instance:str, user:str, password:str):
-	return "Success"
+	try:
+		open_conn(instance, user, password)
+		return "Success"
+	except pyodbc.Error as ex:
+		return ex.args[1]
+
+	
 
 
 def draw_screen(stdscr):
@@ -48,7 +55,7 @@ def draw_screen(stdscr):
 	#set default values
 	data_cpu = [0, 0, 0]
 	data_mem = [0, 0, 0]
-	data_info = ["Line 1", "Line 2", "Line 3", "Line 4"]
+	data_info = ["", "", "", ""]
 	data_activity = []
 	data_jobs = []
 	data_waits = []
@@ -135,10 +142,67 @@ def thread_data_refresh():
 	global data_cpu_changed, data_mem_changed, data_info_changed, data_activity_changed, data_jobs_changed, data_waits_changed, data_changes_changed
 	while True:
 		if init_complete:
-			data_cpu = [random.randint(0, 100), random.randint(0, 100), random.randint(0, 100)]	
-			data_cpu_changed = True	
-			draw_pads()
-		time.sleep(5)
+			data_cpu_tmp = get_cpu_data()
+			if data_cpu_tmp != data_cpu:
+				data_cpu = data_cpu_tmp
+				data_cpu_changed = True	
+
+			data_mem_tmp = get_mem_data()
+			if data_mem_tmp != data_mem: 
+				data_mem = data_mem_tmp
+				data_mem_changed = True
+
+			data_info_tmp = get_info_data()
+			if data_info_tmp != data_info: 
+				data_info = data_info_tmp
+				data_info_changed = True	
+
+			if data_activity_changed or data_changes_changed or data_cpu_changed or data_info_changed or data_jobs_changed or data_mem_changed or data_waits_changed:	
+				draw_pads()
+		time.sleep(2)
+
+
+def get_cpu_data():
+	sql = random.randint(0, 100)
+	other = random.randint(0, 100 - sql)
+	idle = 100 - sql - other
+	return [sql, other, idle]
+
+
+def get_mem_data():
+	return [random.randint(0, 100), random.randint(0,512), 512]
+
+
+def get_info_data():
+	cursor = db_connection.cursor()
+	cursor.execute("""
+		declare @startDate datetime = (
+			select sqlserver_start_time from sys.dm_os_sys_info
+		)
+
+		select
+			upper(@@servername) as servername,
+			'Microsoft SQL Server '
+			+ case cast(serverproperty('ProductMajorVersion') as int) 
+				when 14 then '2017'
+				when 15 then '2019'
+			end + ' (' 
+			+ cast(serverproperty('ProductLevel') as varchar) + '-' 
+			+ cast(serverproperty('ProductUpdateLevel') as varchar) + ') (' 
+			+ cast(serverproperty('ProductUpdateReference') as varchar) + ') - ' 
+			+ cast(serverproperty('ProductVersion') as varchar)
+			as version,
+			cast(serverproperty('Edition') as varchar) as edition,
+			convert(varchar, datediff(hour, @startDate, getdate()) / 24) + ' days, ' 
+			+ convert(varchar, datediff(hour, @startDate, getdate()) % 24) + ' hours & ' 
+			+ convert(varchar, datediff(minute, @startDate, getdate()) % 60) + ' minutes' as uptime
+	""")
+	row = cursor.fetchone()
+	if row:
+		return [row.servername, row.version, row.edition, row.uptime]
+	else:
+		return ["", "", "", ""]
+
 
 def draw_pads():
 	global pad_cpu, pad_info, pad_table
@@ -207,16 +271,10 @@ def draw_cpu():
 def draw_mem():
 	global pad_cpu, data_mem, middle
 
-	offset = 0
-	if data_mem[1] >= 1000 or data_mem[2] >= 1000:
-		offset = 6
-	elif data_mem[1] >= 100 or data_mem[2] >= 100:
-		offset = 4
-	elif data_mem[1] >= 10 or data_mem[2] >= 10:
-		offset = 2
+	s = str(data_mem[1]) + "G/" + str(data_mem[2]) +  "G]"
 	
-	pad_cpu.insstr(3, 0, "Mem   [" + percent_string(data_mem[0], middle-(15 + offset)))
-	pad_cpu.insstr(3, middle - (7 + offset), (str(data_mem[1]) + "G/" + str(data_mem[2]) +  "G]"))
+	pad_cpu.insstr(3, 0, "Mem   [" + percent_string(data_mem[0], middle-(len(s) + 9)))
+	pad_cpu.insstr(3, middle - (len(s) + 1), s)
 
 
 def draw_info():
@@ -245,3 +303,14 @@ def draw_changes():
 
 def percent_string(percent, cols):
 	return "|" * int((cols * 1.0) * ((percent * 1.0) / 100.0))
+
+
+def open_conn(instance, user, password):
+	global db_connection
+	db_connection = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};'
+		+'SERVER=tcp:' + instance
+		+';DATABASE=master'
+		+';UID=' + user
+		+';PWD=' + password, autocommit=True)
+	return db_connection
+	
