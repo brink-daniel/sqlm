@@ -163,10 +163,47 @@ def thread_data_refresh():
 
 
 def get_cpu_data():
-	sql = random.randint(0, 100)
-	other = random.randint(0, 100 - sql)
-	idle = 100 - sql - other
-	return [sql, other, idle]
+	cursor = db_connection.cursor()
+	cursor.execute("""
+		select top 1
+			dateadd(millisecond, -1 * ((
+				select 
+					cpu_ticks/(cpu_ticks/ms_ticks) 
+				from sys.dm_os_sys_info
+			) - [timestamp]), getdate()) as [Time],
+			SystemIdle as [Idle],
+			ProcessUtilization as [SQL],
+			100 - SystemIdle - ProcessUtilization as Other
+
+		from (
+
+			select 	
+				[timestamp],		
+				record.value('(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]', 'int') as SystemIdle,
+				record.value('(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]', 'int') as ProcessUtilization		
+			
+			from 
+				(
+					select			
+						[timestamp],
+						convert(xml, record) AS [record]			 
+					from sys.dm_os_ring_buffers
+					where 
+						ring_buffer_type = N'RING_BUFFER_SCHEDULER_MONITOR'
+						and record like '%<SystemHealth>%'		
+				) as x
+
+		) as y
+
+		order by [Time] desc
+
+	""")
+	row = cursor.fetchone()
+	if row:
+		return [row.SQL, row.Other, row.Idle]
+	else:
+		return [0, 0, 0]
+		
 
 
 def get_mem_data():
@@ -211,10 +248,8 @@ def draw_pads():
 
 	if data_cpu_changed or data_mem_changed:		
 		pad_cpu.clear()
-		if data_cpu_changed:
-			draw_cpu()
-		if data_mem_changed:
-			draw_mem()
+		draw_cpu()
+		draw_mem()
 		data_cpu_changed = False
 		data_mem_changed = False
 		pad_cpu.refresh(0,0, 1,1, 4,middle-1)
