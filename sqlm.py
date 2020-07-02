@@ -102,7 +102,7 @@ def draw_screen(stdscr):
 	data_info = get_info_data()
 
 
-	#auto refrsh pads
+	#auto refresh data displayed
 	data_refresh = threading.Thread(target=thread_data_refresh, daemon=True)
 	data_refresh.start()
 	
@@ -157,7 +157,13 @@ def thread_data_refresh():
 				data_info = data_info_tmp
 				data_info_changed = True	
 
-			if data_activity_changed or data_changes_changed or data_cpu_changed or data_info_changed or data_jobs_changed or data_mem_changed or data_waits_changed:	
+			if (data_activity_changed 
+					or data_changes_changed 
+					or data_cpu_changed 
+					or data_info_changed 
+					or data_jobs_changed 
+					or data_mem_changed 
+					or data_waits_changed):	
 				draw_pads()
 		time.sleep(2)
 
