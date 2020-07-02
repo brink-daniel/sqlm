@@ -21,12 +21,12 @@ global db_connection
 
 #main entry point
 @click.command()
-@click.option('--instance', default=".")
-@click.option('--user', default="sa")
-@click.option('--password', prompt=True, hide_input=True,
+@click.option('-S', '--server', default=".")
+@click.option('-U', '--user', default="sa")
+@click.option('-P', '--password', prompt=True, hide_input=True,
 			  confirmation_prompt=False)
-def cli(instance:str, user:str, password:str):
-	conn_test_result = test_connection(instance, user, password)
+def cli(server:str, user:str, password:str):
+	conn_test_result = test_connection(server, user, password)
 	if conn_test_result == "Success":
 		curses.wrapper(draw_screen)
 	else:
