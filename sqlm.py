@@ -207,7 +207,43 @@ def get_cpu_data():
 
 
 def get_mem_data():
-	return [random.randint(0, 100), random.randint(0,512), 512]
+	cursor = db_connection.cursor()
+	cursor.execute("""
+		select
+			(
+				select 
+					cast(physical_memory_kb/1024.0/1024.0 as int)
+				from sys.dm_os_sys_info
+			) as Physical
+			, (
+				select 
+					cast(cast(value_in_use as bigint)/1024.0 as int)
+				from sys.configurations
+				where name = 'max server memory (MB)'
+			) as Max
+			, (
+				select
+					cast(cast(cntr_value as bigint)/1024.0/1024.0 as int)
+				from sys.dm_os_performance_counters
+				where counter_name = 'Target Server Memory (KB)'
+			) as Target
+			, (
+				select
+					cast(cast(cntr_value as bigint)/1024.0/1024.0 as int)
+				from sys.dm_os_performance_counters
+				where counter_name = 'Total Server Memory (KB)'
+			) as Total
+	""")
+	row = cursor.fetchone()
+	if row:
+		physical = row.Physical
+		if row.Max < physical:
+			physical = row.Max
+
+		return [(row.Total / physical) * 100, row.Target, physical]
+	else:
+		return [0, 0, 0]
+
 
 
 def get_info_data():
