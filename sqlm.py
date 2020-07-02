@@ -26,9 +26,6 @@ global db_connection
 @click.option('--password', prompt=True, hide_input=True,
 			  confirmation_prompt=False)
 def cli(instance:str, user:str, password:str):
-	"""
-	Diagnostics tool for ms sql server
-	"""
 	conn_test_result = test_connection(instance, user, password)
 	if conn_test_result == "Success":
 		curses.wrapper(draw_screen)
@@ -61,9 +58,9 @@ def draw_screen(stdscr):
 	data_waits = []
 	data_changes = []
 	current_tab = ord("0")
-	data_cpu_changed = False
-	data_mem_changed = False
-	data_info_changed = False
+	data_cpu_changed = True
+	data_mem_changed = True
+	data_info_changed = True
 	data_activity_changed = False
 	data_jobs_changed = False
 	data_waits_changed = False
@@ -91,16 +88,19 @@ def draw_screen(stdscr):
 	stdscr.insstr(height-2, width-14, "sqlmedic.com")
 
 	pad_cpu = curses.newpad(4, middle-1)
-	pad_cpu.box()
 	pad_cpu.refresh(0,0, 1,1, 4,middle-1)
 
 	pad_info = curses.newpad(4, middle-1)
-	pad_info.box()
 	pad_info.refresh(0,0, 1,middle + 1, 4,width - 1)
 
 	pad_table = curses.newpad(height - 9, width - 2)
-	pad_table.box()
 	pad_table.refresh(0,0, 7,1, height-2, width-2)
+
+	#initial data load
+	data_cpu = get_cpu_data()
+	data_mem = get_mem_data()
+	data_info = get_info_data()
+
 
 	#auto refrsh pads
 	data_refresh = threading.Thread(target=thread_data_refresh, daemon=True)
@@ -332,20 +332,20 @@ def draw_pads():
 def draw_cpu():
 	global pad_cpu, data_cpu, middle
 	pad_cpu.insstr(0, 0, "SQL   [" + percent_string(data_cpu[0], middle-14))	
-	pad_cpu.insstr(1, 0, "Other [" + percent_string(data_cpu[1], middle-14))
-	pad_cpu.insstr(2, 0, "Idle  [" + percent_string(data_cpu[2], middle-14))	
+	#pad_cpu.insstr(1, 0, "Other [" + percent_string(data_cpu[1], middle-14))
+	#pad_cpu.insstr(2, 0, "Idle  [" + percent_string(data_cpu[2], middle-14))	
 
 	pad_cpu.insstr(0, middle - 6, str(data_cpu[0]).rjust(3, ' ') + "%]")	
-	pad_cpu.insstr(1, middle - 6, str(data_cpu[1]).rjust(3, ' ') + "%]")
-	pad_cpu.insstr(2, middle - 6, str(data_cpu[2]).rjust(3, ' ') + "%]")	
+	#pad_cpu.insstr(1, middle - 6, str(data_cpu[1]).rjust(3, ' ') + "%]")
+	#pad_cpu.insstr(2, middle - 6, str(data_cpu[2]).rjust(3, ' ') + "%]")	
 
 def draw_mem():
 	global pad_cpu, data_mem, middle
 
 	s = str(data_mem[1]) + "G/" + str(data_mem[2]) +  "G]"
 	
-	pad_cpu.insstr(3, 0, "Mem   [" + percent_string(data_mem[0], middle-(len(s) + 9)))
-	pad_cpu.insstr(3, middle - (len(s) + 1), s)
+	pad_cpu.insstr(1, 0, "Mem   [" + percent_string(data_mem[0], middle-(len(s) + 9)))
+	pad_cpu.insstr(1, middle - (len(s) + 1), s)
 
 
 def draw_info():
