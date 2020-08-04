@@ -61,10 +61,10 @@ def draw_screen(stdscr):
 	data_cpu_changed = True
 	data_mem_changed = True
 	data_info_changed = True
-	data_activity_changed = False
-	data_jobs_changed = False
-	data_waits_changed = False
-	data_changes_changed = False
+	data_activity_changed = True
+	data_jobs_changed = True
+	data_waits_changed = True
+	data_changes_changed = True
 	init_complete = False
 
 	#init screen
@@ -155,7 +155,27 @@ def thread_data_refresh():
 			data_info_tmp = get_info_data()
 			if data_info_tmp != data_info: 
 				data_info = data_info_tmp
-				data_info_changed = True	
+				data_info_changed = True
+
+			data_activity_tmp = get_activity_data()
+			if data_activity_tmp != data_activity:
+				data_activity = data_activity_tmp
+				data_activity_changed = True
+
+			data_jobs_tmp = get_jobs_data()
+			if data_jobs_tmp != data_jobs:
+				data_jobs = data_jobs_tmp
+				data_jobs_changed = True
+
+			data_waits_tmp = get_waits_data()
+			if data_waits_tmp != data_waits:
+				data_waits = data_waits_tmp
+				data_waits_changed = True
+
+			data_changes_tmp = get_changes_data()
+			if data_changes_tmp != data_changes:
+				data_changes = data_changes_tmp
+				data_changes_changed = True	
 
 			if (data_activity_changed 
 					or data_changes_changed 
@@ -166,6 +186,137 @@ def thread_data_refresh():
 					or data_waits_changed):	
 				draw_pads()
 		time.sleep(2)
+
+def get_activity_data():
+	cursor = db_connection.cursor()
+	cursor.execute("""
+		select
+			r.session_id as spid
+			,r.blocking_session_id as blocked_by
+			,r.status
+			,isnull(cast(object_name(t.objectid, t.dbid) as varchar(1000)), i.event_info) as object_name	
+			,db_name(r.database_id) as [db]	
+			,convert(decimal(26,2), r.cpu_time / 1000.0) as cpu_time
+			,convert(decimal(26,2), r.total_elapsed_time / 1000.0) as total_time
+			,(r.reads * 8) / 1000 as reads_mb
+			,(r.writes * 8) / 1000 as writes_mb
+			,cast((r.logical_reads * 8) / 1000000.0 as decimal(26,2)) as logical_reads_gb
+			,r.row_count as [rows]
+			,(r.granted_query_memory * 8) /1000 as memory_mb
+			,r.open_transaction_count as open_tran
+			,s.program_name as program	
+			,isnull(nullif(s.login_name, ''), s.original_login_name) as login
+			,s.host_name
+
+		from
+			sys.dm_exec_requests as r
+
+			inner join sys.dm_exec_sessions as s
+			on s.session_id = r.session_id
+				and s.is_user_process = 1
+			
+			cross apply sys.dm_exec_sql_text(r.sql_handle) as t
+
+			cross apply sys.dm_exec_input_buffer(s.session_id, r.request_id) as i
+			
+		where 
+			r.session_id <> @@spid
+			and s.program_name not like 'SQLAgent - TSQL JobStep (Job % : Step %)' 
+			and r.cpu_time > 0
+
+		order by
+			r.total_elapsed_time desc
+	""")
+	rows = cursor.fetchall()
+	if rows:
+		return [0]
+	else:
+		return [0]
+
+def get_jobs_data():
+	cursor = db_connection.cursor()
+	cursor.execute("""
+		select
+			r.session_id as spid
+			,r.blocking_session_id as blocked_by
+			,r.status
+			,isnull(cast(object_name(t.objectid, t.dbid) as varchar(1000)), i.event_info) as object_name	
+			,db_name(r.database_id) as [db]	
+			,convert(decimal(26,2), r.cpu_time / 1000.0) as cpu_time
+			,convert(decimal(26,2), r.total_elapsed_time / 1000.0) as total_time
+			,(r.reads * 8) / 1000 as reads_mb
+			,(r.writes * 8) / 1000 as writes_mb
+			,cast((r.logical_reads * 8) / 1000000.0 as decimal(26,2)) as logical_reads_gb
+			,r.row_count as [rows]
+			,(r.granted_query_memory * 8) /1000 as memory_mb
+			,r.open_transaction_count as open_tran
+			,j.name as program	
+			,isnull(nullif(s.login_name, ''), s.original_login_name) as login
+			,s.host_name			
+
+		from
+			sys.dm_exec_requests as r
+
+			inner join sys.dm_exec_sessions as s
+			on s.session_id = r.session_id
+				and s.is_user_process = 1
+			
+			cross apply sys.dm_exec_sql_text(r.sql_handle) as t
+
+			cross apply sys.dm_exec_input_buffer(s.session_id, r.request_id) as i
+
+			inner join msdb..sysjobs as j
+			on j.job_id = case when s.program_name like 'SQLAgent - TSQL JobStep (Job % : Step %)' then cast(Convert(binary(16), substring(s.program_name, 30, 34), 1) as uniqueidentifier) else null end
+						
+				
+		where 
+			r.session_id <> @@spid
+			and r.cpu_time > 0
+
+		order by
+			r.total_elapsed_time desc
+	""")
+	rows = cursor.fetchall()
+	if rows:
+		return [0]
+	else:
+		return [0]
+
+
+def get_waits_data():
+	cursor = db_connection.cursor()
+	cursor.execute("""
+		select 
+			wait_type
+			, waiting_tasks_count
+			, wait_time_ms
+			, max_wait_time_ms
+			, signal_wait_time_ms
+		from sys.dm_os_wait_stats
+		where	
+			waiting_tasks_count != 0
+			or wait_time_ms != 0
+			or max_wait_time_ms != 0
+			or signal_wait_time_ms != 0
+		order by 
+			wait_time_ms desc
+	""")
+	rows = cursor.fetchall()
+	if rows:
+		return [0]
+	else:
+		return [0]
+
+def get_changes_data():
+	cursor = db_connection.cursor()
+	cursor.execute("""
+		select getdate() as d
+	""")
+	row = cursor.fetchone()
+	if row:
+		return [0]
+	else:
+		return [0]
 
 
 def get_cpu_data():
@@ -319,7 +470,6 @@ def draw_pads():
 
 	if refresh_table:
 		pad_table.clear()
-		pad_table.box()
 		if current_tab == ord("a"):
 			draw_activity()
 		elif current_tab == ord("j"):
@@ -338,12 +488,7 @@ def draw_pads():
 def draw_cpu():
 	global pad_cpu, data_cpu, middle
 	pad_cpu.insstr(0, 0, "SQL   [" + percent_string(data_cpu[0], middle-14))	
-	#pad_cpu.insstr(1, 0, "Other [" + percent_string(data_cpu[1], middle-14))
-	#pad_cpu.insstr(2, 0, "Idle  [" + percent_string(data_cpu[2], middle-14))	
-
 	pad_cpu.insstr(0, middle - 6, str(data_cpu[0]).rjust(3, ' ') + "%]")	
-	#pad_cpu.insstr(1, middle - 6, str(data_cpu[1]).rjust(3, ' ') + "%]")
-	#pad_cpu.insstr(2, middle - 6, str(data_cpu[2]).rjust(3, ' ') + "%]")	
 
 def draw_mem():
 	global pad_cpu, data_mem, middle
@@ -363,18 +508,22 @@ def draw_info():
 
 def draw_activity():
 	global pad_table, data_activity
+	pad_table.insstr(0, 0, "activity")
 	pass
 
 def draw_jobs():
 	global pad_table, data_jobs
+	pad_table.insstr(0, 0, "jobs")
 	pass
 
 def draw_waits():
 	global pad_table, data_waits
+	pad_table.insstr(0, 0, "waits")
 	pass
 
 def draw_changes():
 	global pad_table, data_changes
+	pad_table.insstr(0, 0, "changes")
 	pass
 
 
