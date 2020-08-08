@@ -310,7 +310,48 @@ def get_waits_data():
 def get_changes_data():
 	cursor = db_connection.cursor()
 	cursor.execute("""
-		select getdate() as d
+		create table #changes (
+			[Database] varchar(250),
+			[Object] varchar(250),
+			[Type] varchar(250),
+			[Created] datetime,
+			[Modified] datetime
+		)
+
+		exec sp_msforeachdb '
+
+		if ''?'' not in (''tempdb'', ''msdb'', ''master'', ''model'')
+		begin
+
+			insert into #changes ([Database],[Object],[Type],[Created],[Modified])
+			select 
+				''?'' as [Database],
+				name as [Object], 
+				type_desc as [Type],
+				create_date as [Created],
+				nullif(modify_date, create_date) as [Modified]
+				
+			from [?].sys.objects
+			where
+				is_ms_shipped = 0
+				and (
+					create_date > dateadd(day, -30, getdate())
+					or modify_date > dateadd(day, -30, getdate())
+				)
+				
+			order by
+				name	
+				
+		end
+			
+		'
+
+		select * from #changes
+		order by
+			[Database],
+			[Object]
+			
+		drop table #changes
 	""")
 	row = cursor.fetchone()
 	if row:
